@@ -44,6 +44,7 @@
 // };
 // 1. First, the MongoDB connection setup
 // lib/database/mongoose.ts
+// lib/database/mongoose.ts
 import mongoose from 'mongoose';
 
 const MONGODB_URL = process.env.MONGODB_URL;
@@ -53,35 +54,42 @@ interface MongooseConnection {
   promise: Promise<typeof mongoose> | null;
 }
 
-let cached: MongooseConnection = (global as any).mongoose;
+// Define a type for the global object with mongoose property
+interface GlobalWithMongoose extends Global {
+  mongoose: MongooseConnection;
+}
 
-if (!cached) {
-  cached = (global as any).mongoose = {
+// Type assertion for the global object
+const globalForMongoose = global as unknown as GlobalWithMongoose;
+
+if (!globalForMongoose.mongoose) {
+  globalForMongoose.mongoose = {
     conn: null,
     promise: null,
   };
 }
 
 export const connectToDatabase = async () => {
-  if (cached.conn) return cached.conn;
+  if (globalForMongoose.mongoose.conn) {
+    return globalForMongoose.mongoose.conn;
+  }
 
   if (!MONGODB_URL) {
     throw new Error('Missing MONGODB_URL environment variable');
   }
 
-  cached.promise =
-    cached.promise ||
+  globalForMongoose.mongoose.promise = globalForMongoose.mongoose.promise ||
     mongoose.connect(MONGODB_URL, {
       dbName: 'imaginifyy',
       bufferCommands: false,
     });
 
   try {
-    cached.conn = await cached.promise;
+    globalForMongoose.mongoose.conn = await globalForMongoose.mongoose.promise;
   } catch (e) {
-    cached.promise = null;
+    globalForMongoose.mongoose.promise = null;
     throw e;
   }
 
-  return cached.conn;
+  return globalForMongoose.mongoose.conn;
 };
