@@ -95,7 +95,7 @@
 //   return globalForMongoose.mongoose.conn;
 // };
 // lib/database/mongoose.ts
-import mongoose, { Connection } from 'mongoose';
+import mongoose from 'mongoose';
 
 const MONGODB_URL = process.env.MONGODB_URL;
 
@@ -106,7 +106,7 @@ interface MongooseConnection {
 }
 
 // Initialize cached connection
-let cached: MongooseConnection = {
+const cached: MongooseConnection = {
   isConnected: false,
   conn: null,
   promise: null,
@@ -138,6 +138,12 @@ export const connectToDatabase = async (): Promise<typeof mongoose> => {
     try {
       cached.conn = await cached.promise;
       cached.isConnected = true;
+
+      // Add connection error handler
+      cached.conn.connection.on('error', (error) => {
+        console.error('MongoDB connection error:', error);
+        cached.isConnected = false;
+      });
 
       console.log('MongoDB connected successfully');
       return cached.conn;
