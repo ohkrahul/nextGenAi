@@ -482,6 +482,167 @@
 // }
 
 // app/api/webhooks/clerk/route.ts
+
+// import { Webhook } from 'svix';
+// import { headers } from 'next/headers';
+// import { NextResponse } from 'next/server';
+// import { 
+//   WebhookEvent,
+//   UserJSON,
+//   DeletedObjectJSON
+// } from '@clerk/nextjs/server';
+// import { clerkClient } from '@clerk/clerk-sdk-node';
+// import { createUser, deleteUser, updateUser } from '@/lib/actions/user.actions';
+
+// // Type guard functions
+// function isUserJSON(data: unknown): data is UserJSON {
+//   return (data as UserJSON)?.email_addresses !== undefined;
+// }
+
+// function isDeletedObjectJSON(data: unknown): data is DeletedObjectJSON {
+//   return (data as DeletedObjectJSON)?.deleted === true;
+// }
+
+// export async function POST(req: Request) {
+//   try {
+//     const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+
+//     if (!WEBHOOK_SECRET) {
+//       throw new Error('Missing WEBHOOK_SECRET');
+//     }
+
+//     // Get the headers
+//     const headerPayload = await headers();
+//     const svix_id = headerPayload.get?.('svix-id') ?? '';
+//     const svix_timestamp = headerPayload.get?.('svix-timestamp') ?? '';
+//     const svix_signature = headerPayload.get?.('svix-signature') ?? '';
+
+//     if (!svix_id || !svix_timestamp || !svix_signature) {
+//       throw new Error('Missing required Svix headers');
+//     }
+
+//     // Get the body
+//     let payload;
+//     try {
+//       payload = await req.json();
+//     } catch (err) {
+//       console.error('Error parsing request body:', err);
+//       return new Response('Error parsing request body', { status: 400 });
+//     }
+
+//     const body = JSON.stringify(payload);
+
+//     // Verify the webhook
+//     let evt: WebhookEvent;
+    
+//     try {
+//       const wh = new Webhook(WEBHOOK_SECRET);
+//       evt = wh.verify(body, {
+//         'svix-id': svix_id,
+//         'svix-timestamp': svix_timestamp,
+//         'svix-signature': svix_signature,
+//       }) as WebhookEvent;
+//     } catch (err) {
+//       console.error('❌ Error verifying webhook:', err);
+//       return new Response('Error verifying webhook', { status: 400 });
+//     }
+
+//     const { type, data } = evt;
+//     console.log(`Processing webhook event: ${type}`);
+
+//     // Handle user.created
+//     if (type === 'user.created' && isUserJSON(data)) {
+//       const { 
+//         id,
+//         email_addresses,
+//         first_name,
+//         last_name,
+//         username,
+//         image_url
+//       } = data;
+
+//       if (!email_addresses?.[0]?.email_address) {
+//         throw new Error('Missing required email address');
+//       }
+
+//       const userData = {
+//         clerkId: id,
+//         email: email_addresses[0].email_address,
+//         username: username || `user_${id.slice(0, 8)}`,
+//         firstName: first_name || 'User',
+//         lastName: last_name || '',
+//         photo: image_url || `https://ui-avatars.com/api/?name=${first_name || 'User'}`,
+//       };
+
+//       const newUser = await createUser(userData);
+
+//       if (newUser) {
+//         await clerkClient.users.updateUserMetadata(id, {
+//           publicMetadata: {
+//             userId: newUser._id,
+//           },
+//         });
+
+//         return NextResponse.json({
+//           message: 'User created successfully',
+//           user: newUser,
+//         });
+//       }
+//     }
+
+//     // Handle user.updated
+//     if (type === 'user.updated' && isUserJSON(data)) {
+//       const {
+//         id,
+//         first_name,
+//         last_name,
+//         username,
+//         image_url
+//       } = data;
+
+//       if (!id) throw new Error('Missing user ID');
+
+//       const updateData = {
+//         ...(first_name && { firstName: first_name }),
+//         ...(last_name && { lastName: last_name }),
+//         ...(username && { username }),
+//         ...(image_url && { photo: image_url })
+//       };
+
+//       const updatedUser = await updateUser(id, updateData);
+//       return NextResponse.json({
+//         message: 'User updated successfully',
+//         user: updatedUser,
+//       });
+//     }
+
+//     // Handle user.deleted
+//     if (type === 'user.deleted' && isDeletedObjectJSON(data)) {
+//       const { id } = data;
+
+//       if (!id) throw new Error('Missing user ID');
+
+//       const deletedUser = await deleteUser(id);
+//       return NextResponse.json({
+//         message: 'User deleted successfully',
+//         user: deletedUser,
+//       });
+//     }
+
+//     console.log('Webhook processed successfully');
+//     return NextResponse.json({
+//       message: 'Webhook processed successfully',
+//     });
+
+//   } catch (error) {
+//     console.error('❌ Error in webhook handler:', error);
+//     return new Response(
+//       `Webhook error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+//       { status: 500 }
+//     );
+//   }
+// }
+// app/api/webhooks/clerk/route.ts
 import { Webhook } from 'svix';
 import { headers } from 'next/headers';
 import { NextResponse } from 'next/server';
@@ -492,6 +653,7 @@ import {
 } from '@clerk/nextjs/server';
 import { clerkClient } from '@clerk/clerk-sdk-node';
 import { createUser, deleteUser, updateUser } from '@/lib/actions/user.actions';
+import { ReadonlyHeaders } from 'next/dist/server/web/spec-extension/adapters/headers';
 
 // Type guard functions
 function isUserJSON(data: unknown): data is UserJSON {
@@ -502,7 +664,12 @@ function isDeletedObjectJSON(data: unknown): data is DeletedObjectJSON {
   return (data as DeletedObjectJSON)?.deleted === true;
 }
 
-export async function POST(req: Request) {
+// Helper function to safely get header value
+function getHeaderValue(headers: ReadonlyHeaders, key: string): string {
+  return headers.get(key) || '';
+}
+
+export async function POST(request: Request) {
   try {
     const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
@@ -510,33 +677,26 @@ export async function POST(req: Request) {
       throw new Error('Missing WEBHOOK_SECRET');
     }
 
-    // Get the headers
-    const headerPayload = await headers();
-    const svix_id = headerPayload.get?.('svix-id') ?? '';
-    const svix_timestamp = headerPayload.get?.('svix-timestamp') ?? '';
-    const svix_signature = headerPayload.get?.('svix-signature') ?? '';
+    // Get the headers with await
+    const headersList = await headers();
+    
+    // Get the required SVIX headers
+    const svix_id = getHeaderValue(headersList, 'svix-id');
+    const svix_timestamp = getHeaderValue(headersList, 'svix-timestamp');
+    const svix_signature = getHeaderValue(headersList, 'svix-signature');
 
     if (!svix_id || !svix_timestamp || !svix_signature) {
       throw new Error('Missing required Svix headers');
     }
 
-    // Get the body
-    let payload;
-    try {
-      payload = await req.json();
-    } catch (err) {
-      console.error('Error parsing request body:', err);
-      return new Response('Error parsing request body', { status: 400 });
-    }
+    // Get the body as text first
+    const rawBody = await request.text();
 
-    const body = JSON.stringify(payload);
-
-    // Verify the webhook
     let evt: WebhookEvent;
     
     try {
       const wh = new Webhook(WEBHOOK_SECRET);
-      evt = wh.verify(body, {
+      evt = wh.verify(rawBody, {
         'svix-id': svix_id,
         'svix-timestamp': svix_timestamp,
         'svix-signature': svix_signature,
@@ -546,8 +706,9 @@ export async function POST(req: Request) {
       return new Response('Error verifying webhook', { status: 400 });
     }
 
-    const { type, data } = evt;
-    console.log(`Processing webhook event: ${type}`);
+    const { type } = evt;
+    const data = JSON.parse(rawBody).data;
+    console.log(`Processing webhook event: ${type}`, { data });
 
     // Handle user.created
     if (type === 'user.created' && isUserJSON(data)) {
@@ -573,19 +734,26 @@ export async function POST(req: Request) {
         photo: image_url || `https://ui-avatars.com/api/?name=${first_name || 'User'}`,
       };
 
-      const newUser = await createUser(userData);
+      console.log('Creating user with data:', userData);
 
-      if (newUser) {
-        await clerkClient.users.updateUserMetadata(id, {
-          publicMetadata: {
-            userId: newUser._id,
-          },
-        });
-
-        return NextResponse.json({
-          message: 'User created successfully',
-          user: newUser,
-        });
+      try {
+        const newUser = await createUser(userData);
+        
+        if (newUser) {
+          await clerkClient.users.updateUserMetadata(id, {
+            publicMetadata: {
+              userId: newUser._id,
+            },
+          });
+          
+          return NextResponse.json({
+            message: 'User created successfully',
+            user: newUser,
+          });
+        }
+      } catch (createError) {
+        console.error('Error creating user:', createError);
+        throw createError;
       }
     }
 
@@ -593,44 +761,76 @@ export async function POST(req: Request) {
     if (type === 'user.updated' && isUserJSON(data)) {
       const {
         id,
+        email_addresses,
         first_name,
         last_name,
         username,
         image_url
       } = data;
 
-      if (!id) throw new Error('Missing user ID');
+      if (!id) {
+        throw new Error('Missing user ID');
+      }
 
+      // Create update data with only changed fields
       const updateData = {
-        ...(first_name && { firstName: first_name }),
-        ...(last_name && { lastName: last_name }),
-        ...(username && { username }),
-        ...(image_url && { photo: image_url })
+        ...(first_name !== undefined && { firstName: first_name || 'User' }),
+        ...(last_name !== undefined && { lastName: last_name || '' }),
+        ...(username !== undefined && { username: username || `user_${id.slice(0, 8)}` }),
+        ...(image_url !== undefined && { photo: image_url || `https://ui-avatars.com/api/?name=${first_name || 'User'}` }),
+        ...(email_addresses?.[0]?.email_address && { email: email_addresses[0].email_address })
       };
 
-      const updatedUser = await updateUser(id, updateData);
-      return NextResponse.json({
-        message: 'User updated successfully',
-        user: updatedUser,
-      });
+      console.log('Updating user with data:', { clerkId: id, updateData });
+
+      try {
+        const updatedUser = await updateUser(id, updateData);
+        if (!updatedUser) {
+          throw new Error('Failed to update user');
+        }
+
+        return NextResponse.json({
+          message: 'User updated successfully',
+          user: updatedUser,
+        });
+      } catch (updateError) {
+        console.error('Error updating user:', updateError);
+        throw updateError;
+      }
     }
 
     // Handle user.deleted
     if (type === 'user.deleted' && isDeletedObjectJSON(data)) {
       const { id } = data;
 
-      if (!id) throw new Error('Missing user ID');
+      if (!id) {
+        throw new Error('Missing user ID for deletion');
+      }
 
-      const deletedUser = await deleteUser(id);
-      return NextResponse.json({
-        message: 'User deleted successfully',
-        user: deletedUser,
-      });
+      console.log('Deleting user:', id);
+
+      try {
+        const deletedUser = await deleteUser(id);
+        if (!deletedUser) {
+          throw new Error('Failed to delete user');
+        }
+
+        // Clean up any associated data here if needed
+        // For example: delete user's images, posts, etc.
+
+        return NextResponse.json({
+          message: 'User deleted successfully',
+          user: deletedUser,
+        });
+      } catch (deleteError) {
+        console.error('Error deleting user:', deleteError);
+        throw deleteError;
+      }
     }
 
-    console.log('Webhook processed successfully');
     return NextResponse.json({
       message: 'Webhook processed successfully',
+      type: type,
     });
 
   } catch (error) {
@@ -640,4 +840,16 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+}
+
+// Handle OPTIONS requests
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST,OPTIONS',
+      'Access-Control-Allow-Headers': 'content-type, svix-id, svix-signature, svix-timestamp',
+    },
+  });
 }
