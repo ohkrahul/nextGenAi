@@ -8,25 +8,26 @@ interface MongooseConnection {
   promise: Promise<Mongoose> | null;
 }
 
-// Declare global types
+// Extend the NodeJS global type
 declare global {
-  var mongoose: { 
-    conn: Mongoose | null;
-    promise: Promise<Mongoose> | null;
-  } | undefined;
+  namespace NodeJS {
+    interface Global {
+      mongoose: MongooseConnection | undefined;
+    }
+  }
 }
 
-let cached: MongooseConnection = global.mongoose || {
+// Use NodeJS.Global
+const cached: MongooseConnection = (global as any).mongoose || {
   conn: null,
   promise: null
 };
 
-if (!global.mongoose) {
-  global.mongoose = {
+if (!(global as any).mongoose) {
+  (global as any).mongoose = {
     conn: null,
     promise: null
   };
-  cached = global.mongoose;
 }
 
 export const connectToDatabase = async (): Promise<Mongoose> => {
