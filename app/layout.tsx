@@ -26,12 +26,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <html lang="en">
         <body className={cn("font-IBMPlex antialiased", IBMPlex.variable)}>
           <header>
-            <SignedOut>
-              {/* <SignInButton /> */}
-            </SignedOut>
-            <SignedIn>
-              {/* <UserButton /> */}
-            </SignedIn>
+            <SignedOut />
+          
+            
+            <SignedIn />
+           
+            
           </header>
           <main>{children}</main>
         </body>
