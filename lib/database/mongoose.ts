@@ -8,23 +8,19 @@ interface MongooseConnection {
   promise: Promise<Mongoose> | null;
 }
 
-// Extend the NodeJS global type
-declare global {
-  namespace NodeJS {
-    interface Global {
-      mongoose: MongooseConnection | undefined;
-    }
-  }
-}
+type GlobalMongoose = typeof globalThis & {
+  mongoose?: MongooseConnection;
+};
 
-// Use NodeJS.Global
-const cached: MongooseConnection = (global as any).mongoose || {
+const globalMongoose = global as GlobalMongoose;
+
+const cached: MongooseConnection = globalMongoose.mongoose || {
   conn: null,
   promise: null
 };
 
-if (!(global as any).mongoose) {
-  (global as any).mongoose = {
+if (!globalMongoose.mongoose) {
+  globalMongoose.mongoose = {
     conn: null,
     promise: null
   };
