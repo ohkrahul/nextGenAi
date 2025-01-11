@@ -1,14 +1,13 @@
-// app/api/webhook/clerk/route.ts
-import { clerkClient } from "@clerk/nextjs/server";
-import { WebhookEvent } from "@clerk/nextjs/server";
+// app/api/webhooks/clerk/route.ts
+import { Webhook } from "svix";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
-import { Webhook } from "svix";
+import { WebhookEvent } from "@clerk/nextjs/server";
+import { clerkClient } from "@clerk/clerk-sdk-node";
 
 import { createUser, deleteUser, updateUser } from "@/lib/actions/user.actions";
 
 export async function POST(req: Request) {
-  // You can find this in the Clerk Dashboard -> Webhooks -> choose the webhook
   const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
   if (!WEBHOOK_SECRET) {
@@ -17,29 +16,23 @@ export async function POST(req: Request) {
     );
   }
 
-  // Get the headers
   const headersList = await headers();
   const svix_id = headersList.get("svix-id");
   const svix_timestamp = headersList.get("svix-timestamp");
   const svix_signature = headersList.get("svix-signature");
 
-  // If there are no headers, error out
   if (!svix_id || !svix_timestamp || !svix_signature) {
     return new Response("Error occurred -- no svix headers", {
       status: 400,
     });
   }
 
-  // Get the body
   const payload = await req.json();
   const body = JSON.stringify(payload);
-
-  // Create a new Svix instance with your secret.
   const wh = new Webhook(WEBHOOK_SECRET);
 
   let evt: WebhookEvent;
 
-  // Verify the payload with the headers
   try {
     evt = wh.verify(body, {
       "svix-id": svix_id,
@@ -53,8 +46,6 @@ export async function POST(req: Request) {
     });
   }
 
-  // Get the ID and type
-  const { id } = evt.data;
   const eventType = evt.type;
 
   try {
@@ -62,18 +53,21 @@ export async function POST(req: Request) {
     if (eventType === "user.created") {
       const { id, email_addresses, image_url, first_name, last_name, username } = evt.data;
 
-      const user = {
+      if (!email_addresses?.[0]?.email_address || !id) {
+        return new Response("Missing required user data", { status: 400 });
+      }
+
+      const userData: CreateUserParams = {
         clerkId: id,
         email: email_addresses[0].email_address,
-        username: username!,
-        firstName: first_name,
-        lastName: last_name,
-        photo: image_url,
+        username: username ?? id,
+        firstName: first_name ?? "User",
+        lastName: last_name ?? "",
+        photo: image_url ?? "",
       };
 
-      const newUser = await createUser(user);
+      const newUser = await createUser(userData);
 
-      // Set public metadata
       if (newUser) {
         await clerkClient.users.updateUserMetadata(id, {
           publicMetadata: {
@@ -89,26 +83,32 @@ export async function POST(req: Request) {
     if (eventType === "user.updated") {
       const { id, image_url, first_name, last_name, username } = evt.data;
 
-      const user = {
-        firstName: first_name,
-        lastName: last_name,
-        username: username!,
-        photo: image_url,
+      if (!id) {
+        return new Response("Missing user ID", { status: 400 });
+      }
+
+      const updateData: UpdateUserParams = {
+        firstName: first_name ?? "User",
+        lastName: last_name ?? "",
+        username: username ?? id,
+        photo: image_url ?? "",
       };
 
-      const updatedUser = await updateUser(id, user);
+      const updatedUser = await updateUser(id, updateData);
       return NextResponse.json({ message: "OK", user: updatedUser });
     }
 
     // DELETE
     if (eventType === "user.deleted") {
       const { id } = evt.data;
-      const deletedUser = await deleteUser(id!);
+      
+      if (!id) {
+        return new Response("Missing user ID for deletion", { status: 400 });
+      }
+
+      const deletedUser = await deleteUser(id);
       return NextResponse.json({ message: "OK", user: deletedUser });
     }
-
-    console.log(`Webhook with ID of ${id} and type of ${eventType}`);
-    console.log("Webhook body:", body);
 
     return new Response("", { status: 200 });
   } catch (error) {
